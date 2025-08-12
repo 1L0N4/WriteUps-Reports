@@ -31,9 +31,9 @@ You are tasked with finding out how this attack unfolded and what the threat act
 - отвечает именно жертва с ip адресом 10.0.2.75
 -  порты были открыты на момент сканирования, а не позже.
 
-![[Pasted image 20250729035442.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250729035442.png)
 
-![[Pasted image 20250812195707.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250812195707.png)
 
 Итак, на машине было открыто 13 портов: 53,80,[REDACTED],5357. Можем предположить, что жертва с большой долей вероятности - контроллер домена windows, как минимум с ролями DNS сервера, DHCP сервера и веб-сервера. Видим, что открыты порты LDAP для коммуникации вне домена (389(ldap),636(ldaps)) и для доступа к ресурсам внутри AD (3268(ldap),3269(ldaps)). IIS сервер слушает на порту 80.
 
@@ -42,13 +42,13 @@ You are tasked with finding out how this attack unfolded and what the threat act
 Тайминг nmap сканирования - **04:41:44-04:42:02 (UTC)**. Далее атакующий сканирует открытые порты повторно, чтобы узнать версию слушающих их сервисов **с 04:42:45 по 04:43:15**.
 
 Сканирование закончено и в **04:43:24** злоумышленник заходит на сайт-визитную карточку компании со своего браузера:
-![[Pasted image 20250812200658.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250812200658.png)
 Из дампа мы видим, что он получил информацию о возможных пользователях домена благодаря контактной информации на сайте.
 
 ### 2. The threat actor found four valid usernames, but only one username allowed the attacker to achieve a foothold on the server. What was the username?
 
 Составив список юзернеймов, в **04:43:52** атакующий провел энумерацию пользователей по протоколу керберос в домене DIRECTORY.THM, возможно с помощью скрипта GetNPUsers.py или утилиты kerbrute:
-![[Pasted image 20250812202541.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250812202541.png)
 
 Он нашел существующие юзернеймы в домене:
 - john.doe
@@ -59,21 +59,21 @@ You are tasked with finding out how this attack unfolded and what the threat act
 В данном случае нас интересовали любые ответы kerberos на AS-REQ (Request to Authentication Service) кроме PRINCIPAL_UNKNOWN.
 
 Судя по всему у пользователя [REDACTED] отключена пре-аутентификация kerberos и злоумышленник таким образом может получить валидный kerberos билет и NT хэш. Эта атака называется ASREProasting
-![[Pasted image 20250812203124.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250812203124.png)
 
 Ранее при обычном запросе к KDC (Key Distribution Center) сессионный ключ и билет TGT шифровались алгоритмом AES, как видим на скриншоте ниже (подчеркнуто голубым). KDC по умолчанию использует самое сложное шифрование из тех вариантов, что поддерживает ОС клиента. Но вот TGT, который использует только krbtgt, всегда шифруется самым надежным ключом, здесь это AES256. Зачастую поддерживаемые алгоритмы шифрования в AD выбираются группами, поэтому рядом с AES128 и AES256 вполне могут соседствовать менее надежные RC4 и DES, оставленные для совместимости со старым ПО.
-![[Pasted image 20250812203322.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250812203322.png)
 
 Атакующий воспользовался этим и даунгрейднул алгоритм шифрования сессионного ключа до RC4, чтобы получить NTLM хэш юзера и забрутфорсить пароль:
-![[Pasted image 20250812203741.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250812203741.png)
 
 Итак, в **04:45:17** атакующий подключается по WinRM к хосту жертвы от пользователя [REDACTED]
-![[Pasted image 20250812204107.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250812204107.png)
 Ответ на второй вопрос - `[REDACTED]`
 
 ### 3. The threat actor captured a hash from the user in question 2. What are the last 30 characters of that hash?
 
-Коммуникация  внутри сессии winRM зашифрована, чтобы ее прочитать нам также необходимо получить NTLM хэш. Один из способов - воспользоваться скриптом [[https://github.com/mlgualtieri/NTLMRawUnHide | NTLMRawUnHide.py]] Он читает предоставленные файлы побайтово и ищет сигнатуры NTLMSSP рукопожатия: NTLMSSP_NEGOTIATE --> NTLMSSP_CHALLENGE --> NTLMSSP_AUTH. Собрав из этих сообщений server challenge, ntml response и прочие необходимые данные, скрипт пытается восстановить хэш и печатает его в удобном для дальнейшего брутфорса формате, однако сами NTLMSSP сообщения перед этим должны быть предварительно декодированы из base64:
+Коммуникация  внутри сессии winRM зашифрована, чтобы ее прочитать нам также необходимо получить NTLM хэш. Один из способов - воспользоваться скриптом ![NTLMRawUnHide.py](https://github.com/mlgualtieri/NTLMRawUnHide) Он читает предоставленные файлы побайтово и ищет сигнатуры NTLMSSP рукопожатия: NTLMSSP_NEGOTIATE --> NTLMSSP_CHALLENGE --> NTLMSSP_AUTH. Собрав из этих сообщений server challenge, ntml response и прочие необходимые данные, скрипт пытается восстановить хэш и печатает его в удобном для дальнейшего брутфорса формате, однако сами NTLMSSP сообщения перед этим должны быть предварительно декодированы из base64:
 
 ```shell
 V:\CTFs\THM>python NTLMRawUnHide.py -i ntml_handshake1.raw -q
@@ -89,8 +89,9 @@ REDACTED(username)::directory.thm:4d466ef19179c690:e18eca5d5ed8a7a08682a3cd4e993
 ```
 
 Пример того, как выглядит полное ntlmssp рукопожатие:
-![[Pasted image 20250803070637.png]]
-Второй способ получения хэшей из дампа трафика - использование скрипта [[https://github.com/openwall/john/blob/bleeding-jumbo/run/krb2john.py|krb2john.py]]. Сохраним трафик в подходящий для скрипта формат и запустим его:
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250803070637.png)
+
+Второй способ получения хэшей из дампа трафика - использование скрипта ![krb2john.py](https://github.com/openwall/john/blob/bleeding-jumbo/run/krb2john.py) Сохраним трафик в подходящий для скрипта формат и запустим его:
 `tshark -r traffic-1725627206938.pcap -T pdml > data.pdml`
 `python3 krb2john.py data.pdml`
 
@@ -135,7 +136,7 @@ Stopped: Tue Jul 29 11:35:58 2025
 Таким образом, пароль и ответ на вопрос 4 - [REDACTED] 
 
 Введя его в поле NT Password, мы расшифруем часть коммуникации по WinRM
-![[Pasted image 20250812205328.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250812205328.png)
 
 Также мы можем получить хэш функцию NT пароля и добавить ее в файл keytab.kt в wireshark, результат будет тем же:
 ```shell
@@ -305,13 +306,13 @@ else:
 00000030: 8ed1 680c 4fd1 4483 19a8 c04f            ..h.O.D....O
 ```
 
-![[Pasted image 20250812205824.png]]
-![[Pasted image 20250812205953.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250812205824.png)
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250812205953.png)
 ### 5. What were the second and third commands that the threat actor executed on the system?
 
 Декодируем base64 из поля Decrypted data и получаем список команд, введенных злоумышленником:
 
-![[Pasted image 20250801102049.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250801102049.png)
 ```powershell
 whoami /all
 [REDACTED]
@@ -323,14 +324,14 @@ reg save HKLM\SECURITY C:\SECURITY
 Вторая и третья команды будут являться ответами на 5 вопрос.
 Узнать какие именно данные в сессии WinRM относятся к командам можно пролистав дамп и обратив внимание на xml разметку, а именно на такие тэги как `<rsp:CommandLine> и <rsp:Arguments>` или по размеру поля data. Введем фильтр `http.request.method == "POST" && data.len > 8000 && data.len < 11000` и получим всего 36 пакетов. 
 
-![[Pasted image 20250812210259.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250812210259.png)
 ### 6. What is the flag?
 
 Однако, после нескольких успешно расшифрованных пакетов в поле decrypted data появляется мусор вместо читаемых ASCII-символов и пока что флаг мы не видим. Почему так? Никаких признаков того, что сессия прерывалась или менялись ключи шифрования нет. Ответ кроется в типа шифра RC4 - он потоковый и синхронизируется с ключом по счётчику байтов. При ошибке в подсчете одного байта поток рассинхронизируется. Посмотрим на последний успешно расшифрованный фрейм №5356:
-![[Pasted image 20250812210834.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250812210834.png)
 
 Видим, что отсутствует закрывающая скобка для тэга, при этом размер расшифрованных данных равен 9495 байт, а размер данных WinRM, указанный в заголовке, 9496 байт. Заметим также нетипичный символ возврата каретки `\r` на месте где должен быть байт закрывающей скобки. Теперь все ясно: вместо того, чтобы расшифровать 0x0d Wireshark интерпретировал его как обозначение конца зашифрованных данных. Такая же ситуация повторилась в нескольких последующих фреймах: 5361, 5700, 8393, 8875, 8883, 9383 и 9469. Пакетов немного, поэтому изменим символы новой строки и возврата каретки на любые другие вручную в hex редакторе. Какие именно - не принципиально, главное - восстановить поток.
-![[Pasted image 20250802222354.png]]
+![](https://github.com/1L0N4/WriteUps-Reports/blob/main/Forensics/attachments/Pasted%20image%2020250802222354.png)
 
 После этого нам доступны для декодирования из base64 все остальные команды, которые вводил атакующий на скомпрометированной машине:
 
